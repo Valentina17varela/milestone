@@ -1,0 +1,314 @@
+global:
+  # enabled is the master enabled switch. Setting this to true or false
+  # will enable or disable all the components within this chart by default.
+  enabled: true
+  # Used to define custom fastapi.fullname in template.
+  projectName: "milestone-service"
+  # image sets the repo,tag and pullPolicy of the project
+  image:
+    repository: "392447171681.dkr.ecr.us-east-2.amazonaws.com/milestone-service"
+    tag: "main"
+    pullPolicy: Always
+  # Name of the cluster deployed to. Used for external secrets definition
+  clusterName: "heru-prd"
+  # Namespace where release will be deployed
+  namespace: "milestone-service"
+  # Datadog
+  datadog:
+    enabled: false
+
+fastapi:
+  api:
+    # True if you want to enable api deployment.
+    enabled: true
+
+    # Defines the path where gunicorn serves the application
+    args: gunicorn api.main:app -w 5 -k uvicorn.workers.UvicornWorker -b :80 -t 180
+
+    # True if external secrets should be used
+    externalSecrets:
+      enabled: true
+      shared: true
+
+    # set this to the name of the secret created when externalSecrets is disabled
+    #varsSecretName: "heru"
+
+    replicaCount: 10
+
+    #resources: {}
+    resources:
+      requests:
+        memory: 700Mi
+        cpu: 100m
+      limits:
+        memory: 1400Mi
+        cpu: 200m
+
+    # Used to define custom readinessProbe settings
+    readinessProbe:
+      enabled: true
+      # If you need to use a http path instead of the default exec
+      # path: /v1/sys/health?standbyok=true
+    # Used to enable a livenessProbe for the pods
+    livenessProbe:
+      enabled: false
+      path: "/v1/sys/health?standbyok=true"
+      initialDelaySeconds: 60
+      # extraEnvironmentVars is a list of extra enviroment variables to set with the stateful set. These could be
+      # used to include variables required for auto-unseal.
+      #extraEnvironmentVars:
+      #RP_RAVEN_DSN: https://example@sentry.io/32121
+      # GOOGLE_PROJECT: myproject
+
+      # extraSecretEnvironmentVars is a list of extra enviroment variables to set with the stateful set.
+      # These variables take value from existing Secret objects.
+      #extraSecretEnvironmentVars: []
+      # - envName: AWS_SECRET_ACCESS_KEY
+      #   secretName: project
+    #   secretKey: AWS_SECRET_ACCESS_KEY
+
+    # Affinity Settings for api pods
+    # This should be a multi-line string matching the affinity section of a
+    # PodSpec.
+    affinity: null
+
+    # Toleration Settings for api pods
+    # This should be a multi-line string matching the Toleration array
+    # in a PodSpec.
+    tolerations: null
+
+    # nodeSelector labels for server pod assignment, formatted as a muli-line string.
+    # ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#nodeselector
+    # Example:
+    # nodeSelector: |
+    #   environment: qa
+    nodeSelector: {}
+
+    autoscaling:
+      enabled: true
+      minReplicas: 10
+      maxReplicas: 25
+      targetCPUUtilizationPercentage: 75
+      targetMemoryUtilizationPercentage: 75
+
+    terminationGracePeriodSeconds: 300
+
+    ingress:
+      enabled: false
+      ingressClassName: "alb-ingress-controller-internal"
+      labels: {}
+      # traffic: external
+      annotations: |
+        alb.ingress.kubernetes.io/target-type: ip
+        alb.ingress.kubernetes.io/group.name: milestone-service
+        alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS":443}]'
+        alb.ingress.kubernetes.io/actions.ssl-redirect: '{"Type": "redirect", "RedirectConfig": { "Protocol": "HTTPS", "Port": "443", "StatusCode": "HTTP_301"}}'
+      hosts:
+        - host: api.heru.app
+          paths:
+            - /api/v1/milestone-service/
+      pathType: Prefix
+      tls:
+        hosts:
+          - api.heru.app
+
+
+      # Enables a headless service to be used by
+    service:
+      enabled: true
+      # clusterIP controls whether a Cluster IP address is attached to the
+      # API service within Kubernetes.  By default the API service will
+      # be given a Cluster IP address, set to None to disable.  When disabled
+      # Kubernetes will create a "headless" service.  Headless services can be
+      # used to communicate with pods directly through DNS instead of a round robin
+      # load balancer.
+      # clusterIP: None
+
+      # Configures the service type for the main API service.  Can be ClusterIP
+      # or NodePort.
+      #type: ClusterIP
+
+      # If type is set to "NodePort", a specific nodePort value can be configured,
+      # will be random if left blank.
+      #nodePort: 30000
+
+      # Port on which API server is listening
+      port: 80
+      # Target port to which the service should be mapped to
+      targetPort: 80
+      # Extra annotations for the service definition. This should be a multi-line
+      # string formatted as a map of the annotations to apply to the service.
+      annotations: {}
+
+      healthcheck:
+        enabled: false
+        livenessProbe:
+          enabled: true
+          path: /health/ready
+        readinessProbe:
+          enabled: true
+          path:
+
+  celery_api:
+    # True if you want to enable celery deployment.
+    enabled: false
+
+    resources: {}
+      # requests:
+      #   memory: "4Gi"
+    #   cpu: "2"
+    # limits:
+    #   memory: "4Gi"
+    #   cpu: "2"
+
+    # nodeSelector labels for celery pod assignment, formatted as a muli-line string.
+    # ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#nodeselector
+    # Example:
+    # nodeSelector:
+    #   environment: mgt
+    nodeSelector: null
+
+    config:
+      # Celery app location to monitor by flower
+      app_location: "config"
+
+    flower:
+      enabled: false
+
+      ingress:
+        enabled: false
+        ingressClassName: ingressclass-internal
+
+        annotations:
+          kubernetes.io/ingress.class: "nginx"
+          kubernetes.io/tls-acme: "true"
+          nginx.ingress.kubernetes.io/ssl-redirect: "true"
+
+        hosts:
+          - host: flower-api.heru.internal
+            paths:
+              - /*
+        pathType: Prefix
+        tls:
+          hosts:
+            - flower-api.heru.internal
+
+    items:
+      # Enable switch for each individual celery
+      - enabled: false
+        # True if the type of celery worker is beat. More info at https://docs.celeryproject.org/en/latest/userguide/periodic-tasks.html
+        is_beat: true
+        # Celery deployment name
+        name: example
+        # Amount of replicas created at deploy time
+        replicas: 7
+        # Here you define de command config to launch with celery
+        config:
+          # Celery app location
+          app_location: "config"
+          # Queues to atend
+          queues: "test"
+          # Number of child processes processing the queue. The default is the number of CPUs available at the EC2 instance
+          concurrency: 2
+          # Logging level, choose between DEBUG, INFO, WARNING, ERROR, CRITICAL, or FATAL.
+          loglevel: "ERROR"
+          # Celery extra argument for the command. Such as "--quiet", "-O" (for optimization), etc.
+          extraArgs: "-E"
+          # Only for beat config. Defines the scheduler to use. Defaults to celerybeat-schedule.
+          # scheduler: ""
+          # Only for beat config. Defines the Max seconds to sleep between schedule iterations.
+          # maxInterval: ""
+        resources: {}
+          # requests:
+          #   memory: "3Gi"
+        #   cpu: "3"
+        # limits:
+        #   memory: "3Gi"
+        #   cpu: "3"
+        # nodeSelector labels for celery pod assignment
+        nodeSelector: null
+        # Used to define custom readinessProbe settings
+        readinessProbe:
+          command: celery inspect ping -A config -d celery@$HOSTNAME
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          # extraEnvironmentVars is a list of extra enviroment variables to set with the stateful set. These could be
+          # used to include variables required for auto-unseal.
+          #extraEnvironmentVars:
+          # GOOGLE_REGION: global
+
+  # Jobs
+  jobs:
+    enabled: false
+    resources:
+      requests:
+        memory: "4Gi"
+        cpu: "2"
+      limits:
+        memory: "4Gi"
+        cpu: "2"
+    # tolerations:
+    #   - key: "lifecycle"
+    #     operator: "Equal"
+    #     value: "normal"
+    #     effect: NoSchedule
+    items:
+      - enabled: false
+        name: django-collectstatic
+        backoffLimit: 1
+        containerName: collectstatic
+        activeDeadlineSeconds: 10000
+        restartPolicy: Never
+        command: "collectstatic"
+        settings: "--settings=heru.settings"
+        annotations:
+          helm.sh/hook: "post-upgrade"
+          helm.sh/hook-weight: "1"
+          helm.sh/hook-delete-policy: "before-hook-creation"
+        resources:
+          requests:
+            memory: 300Mi
+            cpu: 200m
+          limits:
+            memory: 600Mi
+            cpu: 800m
+      - enabled: false
+        name: django-migrations
+        backoffLimit: 1
+        containerName: migrations
+        activeDeadlineSeconds: 10000
+        restartPolicy: Never
+        command: "migrate"
+        settings: "--settings=heru.settings"
+        annotations:
+          helm.sh/hook: "pre-install"
+          helm.sh/hook-weight: "1"
+          # Cron Jobs
+          helm.sh/hook-delete-policy: "before-hook-creation"
+
+  cronjobs:
+    enabled: false
+    varsSecretName: prd-env-bo
+    externalSecretsShared: false
+    namespace: cronjobs
+    image:
+      url: ""
+      tag: ""
+      pullPolicy: Always
+    concurrencyPolicy: "Forbid"
+    resources:
+      requests:
+        memory: 300Mi
+        cpu: 200m
+      limits:
+        memory: 600Mi
+        cpu: 800m
+    items:
+      - enabled: false
+        name: example-name
+        backoffLimit: 1
+        containerName: django
+        command: command
+        settings: "--settings=heru.settings"
+        schedule: "0 0 * * MON"
+        restartPolicy: Never

@@ -1,0 +1,26 @@
+version: "3.1"
+
+services:
+  rabbitmq:
+    image: 'rabbitmq:3.8-management'
+
+  postgresql:
+    image: postgres:10
+    restart: always
+    ports:
+      - "5434:5432"
+    environment:
+      - POSTGRES_HOST_AUTH_METHOD=trust
+
+  app:
+    build: .
+    ports:
+      - 8000:8080
+    volumes:
+      - .:/srv/milestone-service
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8080 --reload
+    env_file:
+      - .env
+    tty: true
+    depends_on:
+      - postgresql
